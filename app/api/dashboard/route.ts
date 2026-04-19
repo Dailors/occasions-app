@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
       .from('media-originals')
       .createSignedUrls(paths, 60 * 60 * 24 * 7)
     for (const s of signed ?? []) {
-      if (s.signedUrl) urlMap[s.path] = s.signedUrl
+      if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl
     }
   }
 
@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
       .from('generated-videos')
       .createSignedUrls(videoPaths, 60 * 60 * 24 * 7)
     for (const s of sv ?? []) {
-      if (s.signedUrl) videoUrlMap[s.path] = s.signedUrl
+      if (s.signedUrl && s.path) videoUrlMap[s.path] = s.signedUrl
     }
   }
 

@@ -45,7 +45,7 @@ export async function GET(_: NextRequest, { params }: Params) {
 
   const urlMap: Record<string, string> = {}
   for (const s of signed) {
-    if (s.signedUrl) urlMap[s.path] = s.signedUrl
+    if (s.signedUrl && s.path) urlMap[s.path] = s.signedUrl
   }
 
   // Build a JSON response with all signed URLs — client fetches them directly.
