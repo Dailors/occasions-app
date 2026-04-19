@@ -6,5 +6,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!.*).*)'],  // Match nothing
+  matcher: ['/disabled-middleware-placeholder'],
 }
