@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
       {
         cookies: {
           getAll()      { return cookieStore.getAll() },
-          setAll(toSet) {
+          setAll(toSet: { name: string; value: string; options?: any }[]) {
             toSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
