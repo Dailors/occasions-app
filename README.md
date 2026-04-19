@@ -195,3 +195,4 @@ Add all `.env.local` keys to Vercel → Project → Environment Variables.
 
 For FFmpeg in production, set `FFMPEG_PATH` on a long-running worker (Railway, Fly.io, or a Vercel function with a custom layer). The 5-minute `maxDuration` on the generate route covers most weddings' render times.
 "# occasions-app" 
+ 
