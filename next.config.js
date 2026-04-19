@@ -15,9 +15,8 @@ const nextConfig = {
       },
     ],
   },
-  serverExternalPackages: ['sharp', 'fluent-ffmpeg'],
-  output: 'standalone',
   experimental: {
+    serverComponentsExternalPackages: ['sharp', 'fluent-ffmpeg'],
     missingSuspenseWithCSRBailout: false,
   },
 }
