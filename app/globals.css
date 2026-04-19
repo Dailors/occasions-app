@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+/* ── Color palette ─────────────────────────────────────────────
+   Van Deusen Blue  → brand   (primary actions, buttons, links)
+   Hale Navy        → navy    (headers, dark surfaces)
+   Smoke Gray       → smoke   (secondary text, borders)
+   Berkshire Beige  → beige   (warm backgrounds, cards)
+──────────────────────────────────────────────────────────────── */
+
+@theme {
+  --color-brand-50:  #eaf0f7;
+  --color-brand-100: #c5d5e9;
+  --color-brand-200: #9db8d8;
+  --color-brand-300: #739bc8;
+  --color-brand-400: #4e82bb;
+  --color-brand-500: #2d5282;
+  --color-brand-600: #244369;
+  --color-brand-700: #1b3451;
+  --color-brand-800: #122538;
+  --color-brand-900: #091620;
+
+  --color-navy-50:  #e8ecf0;
+  --color-navy-100: #c5cdd6;
+  --color-navy-200: #9eadb9;
+  --color-navy-300: #778d9d;
+  --color-navy-400: #597687;
+  --color-navy-500: #22303f;
+  --color-navy-600: #1c2833;
+  --color-navy-700: #162028;
+  --color-navy-800: #10181d;
+  --color-navy-900: #0a1013;
+
+  --color-smoke-50:  #f0f3f5;
+  --color-smoke-100: #d5dde4;
+  --color-smoke-200: #b8c5cf;
+  --color-smoke-300: #9aadb9;
+  --color-smoke-400: #8499a9;
+  --color-smoke-500: #788fa3;
+  --color-smoke-600: #5f7384;
+  --color-smoke-700: #475966;
+  --color-smoke-800: #2f3f48;
+  --color-smoke-900: #18252b;
+
+  --color-beige-50:  #faf8f5;
+  --color-beige-100: #ede8df;
+  --color-beige-200: #ddd4c5;
+  --color-beige-300: #cdbfaa;
+  --color-beige-400: #c4b49a;
+  --color-beige-500: #b39e81;
+  --color-beige-600: #96836a;
+  --color-beige-700: #786853;
+  --color-beige-800: #5a4e3c;
+  --color-beige-900: #3c3428;
+
+  --font-sans:  var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-playfair), Georgia, serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #faf8f5;
+  color: #22303f;
+}
+
+button, a, [role="button"] {
+  min-height: 44px;
+  touch-action: manipulation;
+}
+
+@layer utilities {
+  .safe-area-inset-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .scroll-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  .scroll-hide::-webkit-scrollbar { display: none; }
+  .no-select { user-select: none; -webkit-user-select: none; }
+}
