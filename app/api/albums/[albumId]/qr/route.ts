@@ -41,7 +41,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       color:          { dark: '#1a1a1a', light: '#ffffff' },
       errorCorrectionLevel: 'H',
     })
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type':        'image/png',
         'Content-Disposition': `attachment; filename="occasions-qr-${album.type}.png"`,
