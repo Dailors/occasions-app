@@ -1,20 +1,4 @@
 {
-  "functions": {
-    "app/api/upload/route.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "app/api/video/generate/route.ts": {
-      "maxDuration": 60,
-      "memory": 1024
-    },
-    "app/api/dashboard/route.ts": {
-      "maxDuration": 30
-    },
-    "app/api/events/[eventId]/download/route.ts": {
-      "maxDuration": 60
-    }
-  },
   "headers": [
     {
       "source": "/api/(.*)",
