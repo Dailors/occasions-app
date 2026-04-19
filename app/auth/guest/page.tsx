@@ -2,6 +2,8 @@
 // Called by middleware when a guest hits /upload/[token] without a session.
 // Signs them in anonymously, then bounces them to the upload page.
 'use client'
+
+export const dynamic = 'force-dynamic'
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Sparkles } from 'lucide-react'

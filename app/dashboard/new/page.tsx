@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 // app/dashboard/new/page.tsx
 import { Sidebar } from '@/components/admin/Sidebar'
 import { CreateEventForm } from '@/components/admin/CreateEventForm'

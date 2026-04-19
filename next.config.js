@@ -16,6 +16,10 @@ const nextConfig = {
     ],
   },
   serverExternalPackages: ['sharp', 'fluent-ffmpeg'],
+  output: 'standalone',
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
 }
 
 module.exports = nextConfig
