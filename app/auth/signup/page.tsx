@@ -1,138 +1,205 @@
-// app/auth/signup/page.tsx
 'use client'
 
 export const dynamic = 'force-dynamic'
+
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Sparkles } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import toast from 'react-hot-toast'
+import { Eye, EyeOff, Sparkles, ArrowRight, User, Briefcase } from 'lucide-react'
 
 export default function SignupPage() {
-  const router   = useRouter()
+  const router = useRouter()
   const supabase = createClient()
 
+  const [role, setRole]         = useState<'host' | 'manager'>('host')
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
-  const [sent,    setSent]      = useState(false)
-  const [form,    setForm]      = useState({ full_name: '', email: '', password: '', confirm: '' })
-  const [errors,  setErrors]    = useState<Record<string, string>>({})
+  const [error, setError]       = useState('')
+  const [success, setSuccess]   = useState(false)
 
-  const validate = () => {
-    const e: Record<string, string> = {}
-    if (!form.full_name.trim())        e.full_name = 'Name is required'
-    if (!form.email)                   e.email     = 'Email is required'
-    if (form.password.length < 8)      e.password  = 'Password must be at least 8 characters'
-    if (form.password !== form.confirm) e.confirm  = 'Passwords do not match'
-    setErrors(e)
-    return Object.keys(e).length === 0
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!validate()) return
+    setError('')
     setLoading(true)
-    try {
-      const { error } = await supabase.auth.signUp({
-        email:    form.email,
-        password: form.password,
-        options: {
-          data:         { full_name: form.full_name, role: 'admin' },
-          emailRedirectTo: `${location.origin}/auth/callback?next=/dashboard`,
-        },
-      })
-      if (error) throw error
-      setSent(true)
-    } catch (err: any) {
-      toast.error(err.message ?? 'Sign up failed')
-    } finally {
-      setLoading(false)
-    }
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        data: { role, full_name: fullName },
+      },
+    })
+
+    setLoading(false)
+    if (error) { setError(error.message); return }
+    setSuccess(true)
   }
 
-  if (sent) {
+  const handleGoogleSignup = async () => {
+    setLoading(true)
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+        queryParams: { access_type: 'offline', prompt: 'consent' },
+      },
+    })
+  }
+
+  if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-gold-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="w-12 h-12 rounded-2xl bg-green-500 flex items-center justify-center shadow-lg mx-auto mb-4">
-            <Sparkles className="w-6 h-6 text-white" />
-          </div>
-          <h2 className="font-serif text-xl font-semibold text-gray-900 mb-2">Check your email</h2>
-          <p className="text-sm text-gray-500">
-            We sent a confirmation link to <strong>{form.email}</strong>.<br />
-            Click it to activate your account.
-          </p>
+      <div className="app-container flex flex-col items-center justify-center px-6 text-center">
+        <div className="w-16 h-16 bg-brand-500 rounded-2xl flex items-center justify-center mb-4">
+          <Sparkles className="w-8 h-8 text-white" />
         </div>
+        <h1 className="font-serif text-2xl text-navy-500 mb-2">Check your email</h1>
+        <p className="text-smoke-500 text-sm max-w-xs">
+          We sent a confirmation link to <strong>{email}</strong>. Click it to finish setting up your account.
+        </p>
+        <Link href="/auth/login" className="mt-6 text-brand-500 text-sm font-medium">
+          Back to sign in
+        </Link>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-50 via-white to-gold-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center gap-3 mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-brand-500 flex items-center justify-center shadow-lg">
-            <Sparkles className="w-6 h-6 text-white" />
+    <div className="app-container flex flex-col">
+      <div className="bg-brand-500 px-6 pt-12 pb-16 rounded-b-[32px] safe-area-inset-top">
+        <div className="flex items-center gap-2 mb-8">
+          <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-white" />
           </div>
-          <h1 className="font-serif text-2xl font-semibold text-gray-900">Create account</h1>
-          <p className="text-sm text-gray-500">Admin accounts only</p>
+          <span className="font-serif text-xl text-white">Occasions</span>
+        </div>
+        <h1 className="font-serif text-3xl text-white mb-2">Create account</h1>
+        <p className="text-brand-100 text-sm">Start collecting your special moments</p>
+      </div>
+
+      <div className="px-6 py-8 flex-1 flex flex-col">
+        {/* Role selector */}
+        <div className="grid grid-cols-2 gap-3 mb-6">
+          <button
+            type="button"
+            onClick={() => setRole('host')}
+            className={`p-4 rounded-xl border-2 text-left transition-all ${
+              role === 'host'
+                ? 'border-brand-500 bg-brand-50'
+                : 'border-smoke-100 bg-white'
+            }`}
+          >
+            <User className={`w-5 h-5 mb-2 ${role === 'host' ? 'text-brand-500' : 'text-smoke-500'}`} />
+            <div className={`text-sm font-semibold ${role === 'host' ? 'text-brand-600' : 'text-navy-500'}`}>Host</div>
+            <div className="text-xs text-smoke-500 mt-0.5">My own event</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('manager')}
+            className={`p-4 rounded-xl border-2 text-left transition-all ${
+              role === 'manager'
+                ? 'border-brand-500 bg-brand-50'
+                : 'border-smoke-100 bg-white'
+            }`}
+          >
+            <Briefcase className={`w-5 h-5 mb-2 ${role === 'manager' ? 'text-brand-500' : 'text-smoke-500'}`} />
+            <div className={`text-sm font-semibold ${role === 'manager' ? 'text-brand-600' : 'text-navy-500'}`}>Event Manager</div>
+            <div className="text-xs text-smoke-500 mt-0.5">For my clients</div>
+          </button>
         </div>
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Input
-              id="full_name"
-              label="Full name"
-              placeholder="Sara Al Rashid"
-              autoComplete="name"
-              value={form.full_name}
-              onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
-              error={errors.full_name}
+        <button
+          onClick={handleGoogleSignup}
+          disabled={loading}
+          className="flex items-center justify-center gap-3 w-full h-12 border border-smoke-100 rounded-xl bg-white text-navy-500 font-medium hover:border-smoke-300 transition-colors disabled:opacity-50"
+        >
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          Sign up with Google
+        </button>
+
+        <div className="flex items-center gap-3 my-6">
+          <div className="flex-1 h-px bg-smoke-100" />
+          <span className="text-xs text-smoke-500">or</span>
+          <div className="flex-1 h-px bg-smoke-100" />
+        </div>
+
+        <form onSubmit={handleSignup} className="flex flex-col gap-4">
+          <div>
+            <label className="text-xs font-medium text-smoke-700 mb-1.5 block">Full name</label>
+            <input
+              type="text"
+              required
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
+              placeholder="Your full name"
             />
-            <Input
-              id="email"
-              label="Email"
+          </div>
+          <div>
+            <label className="text-xs font-medium text-smoke-700 mb-1.5 block">Email</label>
+            <input
               type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
               placeholder="you@example.com"
-              autoComplete="email"
-              value={form.email}
-              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              error={errors.email}
             />
-            <Input
-              id="password"
-              label="Password"
-              type="password"
-              placeholder="Min. 8 characters"
-              autoComplete="new-password"
-              value={form.password}
-              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              error={errors.password}
-            />
-            <Input
-              id="confirm"
-              label="Confirm password"
-              type="password"
-              placeholder="••••••••"
-              autoComplete="new-password"
-              value={form.confirm}
-              onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))}
-              error={errors.confirm}
-            />
-            <Button type="submit" loading={loading} size="lg" className="mt-1">
-              Create account
-            </Button>
-          </form>
-        </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-smoke-700 mb-1.5 block">Password</label>
+            <div className="relative">
+              <input
+                type={showPass ? 'text' : 'password'}
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full h-12 px-4 pr-12 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
+                placeholder="At least 6 characters"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(!showPass)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-smoke-500 !min-h-0 p-1"
+              >
+                {showPass ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              </button>
+            </div>
+          </div>
 
-        <p className="text-center text-sm text-gray-500 mt-5">
-          Already have an account?{' '}
-          <Link href="/auth/login" className="text-brand-600 hover:text-brand-700 font-medium">
-            Sign in
-          </Link>
-        </p>
+          {error && <div className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</div>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex items-center justify-center gap-2 w-full h-12 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition-colors disabled:opacity-50 mt-2"
+          >
+            {loading ? 'Creating account...' : 'Create account'}
+            {!loading && <ArrowRight className="w-4 h-4" />}
+          </button>
+        </form>
+
+        <div className="mt-auto pt-8 text-center">
+          <p className="text-sm text-smoke-500">
+            Already have an account?{' '}
+            <Link href="/auth/login" className="text-brand-500 font-medium">Sign in</Link>
+          </p>
+          <p className="text-xs text-smoke-500 mt-4">
+            By continuing you agree to our{' '}
+            <Link href="/terms" className="underline">Terms</Link> and{' '}
+            <Link href="/privacy" className="underline">Privacy Policy</Link>
+          </p>
+        </div>
       </div>
     </div>
   )
