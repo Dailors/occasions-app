@@ -19,13 +19,10 @@ export function formatBytes(bytes: number | null): string {
   return (bytes / 1024 ** 3).toFixed(2) + ' GB'
 }
 
-// CRITICAL: Builds upload URL using current browser origin (not .env)
-// This way the link works on whatever domain is actually live
 export function buildUploadUrl(token: string): string {
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/upload/${token}`
   }
-  // Server-side fallback
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://accasion-app-elmirjimmy.vercel.app'
   return `${base}/upload/${token}`
 }
@@ -54,4 +51,37 @@ export function albumIcon(type: string): string {
     women: '👰',
   }
   return icons[type] ?? '📷'
+}
+
+// These were missing from the old utils.ts — adding them now
+export function categoryLabel(category: string | null): string {
+  if (!category) return 'Uncategorized'
+  const labels: Record<string, string> = {
+    couple:    'Couple',
+    family:    'Family',
+    ceremony:  'Ceremony',
+    dance:     'Dance',
+    venue:     'Venue',
+  }
+  return labels[category] ?? category
+}
+
+export function emotionEmoji(emotion: string | null): string {
+  if (!emotion) return ''
+  const emojis: Record<string, string> = {
+    happy:     '😊',
+    emotional: '🥹',
+    energetic: '🎉',
+    neutral:   '😐',
+  }
+  return emojis[emotion] ?? ''
+}
+
+export function emotionLabel(emotion: string | null): string {
+  if (!emotion) return 'Neutral'
+  return emotion.charAt(0).toUpperCase() + emotion.slice(1)
+}
+
+export function formatNumber(n: number): string {
+  return new Intl.NumberFormat('en-US').format(n)
 }
