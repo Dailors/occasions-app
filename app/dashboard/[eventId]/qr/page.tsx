@@ -1,129 +1,141 @@
-// app/dashboard/[eventId]/qr/page.tsx
-// Printable page with all 3 album QR codes.
-// Reads albums from the Zustand store — no extra fetch needed.
-
 'use client'
-import { useState, useEffect } from 'react'
+
+export const dynamic = 'force-dynamic'
+
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { useEventStore } from '@/lib/store'
-import { Button } from '@/components/ui/Button'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { Printer, Sparkles } from 'lucide-react'
-import { buildUploadUrl, albumTypeLabel, formatDate } from '@/lib/utils'
-import type { Album } from '@/types'
+import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
+import { useI18n } from '@/lib/i18n'
+import { QRCodeSVG } from 'qrcode.react'
+import {
+  ArrowLeft, Copy, Check, MessageCircle, Printer, Lock,
+} from 'lucide-react'
 
-const ALBUM_ICONS: Record<string, string> = {
-  mixed: '📸',
-  men:   '🤵',
-  women: '👰',
-}
+export default function QRPage() {
+  const { eventId } = useParams<{ eventId: string }>()
+  const { t, lang, dir } = useI18n()
+  const supabase = createClient()
 
-export default function PrintQRPage() {
-  const { eventId }           = useParams<{ eventId: string }>()
-  const event                 = useEventStore(s => s.event)
-  const albums                = useEventStore(s => s.albums)
-  const storeLoading          = useEventStore(s => s.loading)
-  const [qrs,    setQrs]      = useState<Record<string, string>>({})
-  const [qrLoad, setQrLoad]   = useState(false)
+  const [event,  setEvent]   = useState<any>(null)
+  const [albums, setAlbums]  = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [copiedId, setCopiedId] = useState('')
 
-  // Fetch QR SVGs once albums are available
   useEffect(() => {
-    if (albums.length === 0) return
-    setQrLoad(true)
-    Promise.all(
-      albums.map(async (album: Album) => {
-        const r   = await fetch(`/api/albums/${album.id}/qr?format=svg`)
-        const svg = await r.text()
-        return [album.id, svg] as const
-      })
-    ).then(entries => {
-      setQrs(Object.fromEntries(entries))
-      setQrLoad(false)
-    })
-  }, [albums.map(a => a.id).join(',')])
+    const load = async () => {
+      const { data: ev } = await supabase.from('events').select('id, couple_names').eq('id', eventId).single()
+      setEvent(ev)
+      const { data: al } = await supabase.from('albums').select('*').eq('event_id', eventId).order('created_at')
+      setAlbums(al ?? [])
+      setLoading(false)
+    }
+    load()
+  }, [eventId])
 
-  const loading = storeLoading || qrLoad
+  const uploadUrl = (token: string) =>
+    typeof window !== 'undefined' ? `${window.location.origin}/upload/${token}` : ''
+
+  const copy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(''), 2000)
+  }
+
+  if (loading) {
+    return <div className="app-container flex items-center justify-center"><div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+  }
+
+  const albumLabels: Record<string, string> = {
+    mixed: t('album.mixed'),
+    men:   t('album.men'),
+    women: t('album.women'),
+  }
+  const albumIcons: Record<string, string> = {
+    mixed: '📸',
+    men:   '🤵',
+    women: '👰',
+  }
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Print button */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-gray-100 print:hidden">
-        <span className="text-sm text-gray-500">Print QR codes for your venue</span>
-        <Button onClick={() => window.print()} size="sm" className="gap-1.5">
-          <Printer className="w-3.5 h-3.5" />
+    <div className="app-container min-h-screen" dir={dir}>
+      <div className="sticky top-0 z-30 bg-navy-500 px-4 h-14 flex items-center justify-between safe-area-inset-top print:hidden">
+        <Link href={`/dashboard/${eventId}`} className="flex items-center gap-2 text-white !min-h-0">
+          <ArrowLeft className={`w-5 h-5 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
+          <span className="text-sm font-medium">{t('common.back')}</span>
+        </Link>
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-1.5 text-white text-sm font-medium !min-h-0"
+        >
+          <Printer className="w-4 h-4" />
           Print
-        </Button>
+        </button>
       </div>
 
-      {/* Printable sheet */}
-      <div className="max-w-3xl mx-auto px-8 py-12 print:py-6 print:px-6">
-        {/* Header */}
-        <div className="text-center mb-10">
-          <div className="flex items-center justify-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-brand-500" />
-            <span className="font-serif text-lg text-brand-600">Occasions</span>
-          </div>
-          {loading && !event ? (
-            <div className="flex flex-col items-center gap-2">
-              <Skeleton className="h-8 w-56 mx-auto" />
-              <Skeleton className="h-4 w-32 mx-auto" />
+      <div className="bg-brand-500 px-5 pt-6 pb-10 print:bg-white print:text-black">
+        <h1 className="font-serif text-2xl text-white print:text-navy-500 mb-1">{event?.couple_names}</h1>
+        <p className="text-sm text-brand-100 print:text-smoke-500">
+          {lang === 'ar' ? 'امسح رمز QR لرفع الصور' : 'Scan QR to upload photos'}
+        </p>
+      </div>
+
+      <div className="px-5 py-5 -mt-5 flex flex-col gap-4 print:gap-6">
+        {albums.map(album => (
+          <div key={album.id} className="card-warm rounded-2xl p-5 print:break-inside-avoid">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">{albumIcons[album.type]}</span>
+              <div className="flex-1">
+                <h3 className="font-semibold text-navy-500">{albumLabels[album.type]}</h3>
+                {album.pin_code && (
+                  <div className="flex items-center gap-1 text-xs text-amber-700">
+                    <Lock className="w-3 h-3" />
+                    {lang === 'ar' ? `رمز: ${album.pin_code}` : `PIN: ${album.pin_code}`}
+                  </div>
+                )}
+              </div>
             </div>
-          ) : (
-            <>
-              <h1 className="font-serif text-3xl font-semibold text-gray-900">
-                {event?.couple_names ?? ''}
-              </h1>
-              {event?.wedding_date && (
-                <p className="text-gray-500 mt-1">{formatDate(event.wedding_date)}</p>
-              )}
-            </>
-          )}
-          <p className="text-sm text-gray-400 mt-3">
-            Scan a QR code below to share your photos and videos
-          </p>
-        </div>
 
-        {/* QR grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 print:grid-cols-3">
-          {loading && albums.length === 0
-            ? [0,1,2].map(i => (
-                <div key={i} className="flex flex-col items-center gap-4 p-6 rounded-2xl border border-gray-100">
-                  <Skeleton className="h-8 w-8" rounded="full" />
-                  <Skeleton className="h-5 w-28" />
-                  <Skeleton className="h-44 w-44" rounded="lg" />
-                </div>
-              ))
-            : albums.map(album => (
-                <div key={album.id} className="flex flex-col items-center gap-4 p-6 rounded-2xl border border-gray-100 print:border-gray-200">
-                  <span className="text-3xl">{ALBUM_ICONS[album.type] ?? '📷'}</span>
-                  <h3 className="font-semibold text-gray-900 text-center">{album.name}</h3>
-                  <p className="text-xs text-gray-500 text-center">{albumTypeLabel(album.type)}</p>
+            <div className="flex justify-center bg-white p-4 rounded-xl border border-beige-200 mb-3">
+              <QRCodeSVG
+                value={uploadUrl(album.access_token)}
+                size={180}
+                level="H"
+                fgColor="#22303f"
+              />
+            </div>
 
-                  {qrs[album.id] ? (
-                    <div className="w-44 h-44" dangerouslySetInnerHTML={{ __html: qrs[album.id] }} />
-                  ) : (
-                    <Skeleton className="w-44 h-44" rounded="lg" />
-                  )}
+            <div className="bg-beige-50 rounded-lg p-2 mb-3 border border-beige-200 print:hidden">
+              <p className="text-[10px] text-navy-500 font-mono break-all text-center">{uploadUrl(album.access_token)}</p>
+            </div>
 
-                  <p className="text-[10px] text-gray-400 text-center break-all font-mono">
-                    {buildUploadUrl(album.access_token)}
-                  </p>
-                </div>
-              ))
-          }
-        </div>
-
-        <div className="text-center mt-12 print:mt-8">
-          <p className="text-xs text-gray-300">
-            Your uploads are private · Only the couple sees the full gallery · Powered by Occasions
-          </p>
-        </div>
+            <div className="grid grid-cols-2 gap-2 print:hidden">
+              <button
+                onClick={() => copy(uploadUrl(album.access_token), album.id)}
+                className="flex items-center justify-center gap-1.5 h-11 bg-brand-500 text-white text-sm font-medium rounded-xl"
+              >
+                {copiedId === album.id ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copiedId === album.id ? t('common.copied') : t('common.copy')}
+              </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(uploadUrl(album.access_token))}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-1.5 h-11 bg-green-500 text-white text-sm font-medium rounded-xl"
+              >
+                <MessageCircle className="w-4 h-4" />
+                WhatsApp
+              </a>
+            </div>
+          </div>
+        ))}
       </div>
 
       <style jsx global>{`
         @media print {
           @page { margin: 1cm; }
-          body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+          body { background: white !important; }
+          .app-container { box-shadow: none !important; max-width: 100% !important; }
         }
       `}</style>
     </div>
