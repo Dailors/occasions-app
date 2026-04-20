@@ -6,20 +6,21 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Eye, EyeOff, Sparkles, ArrowRight, User, Briefcase } from 'lucide-react'
+import { Eye, EyeOff, Sparkles, ArrowRight, User, Briefcase, ArrowLeft } from 'lucide-react'
 
 export default function SignupPage() {
   const router = useRouter()
   const supabase = createClient()
 
+  const [step, setStep]         = useState<'form' | 'verify'>('form')
   const [role, setRole]         = useState<'host' | 'manager'>('host')
   const [fullName, setFullName] = useState('')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode]         = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
-  const [success, setSuccess]   = useState(false)
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,7 +38,24 @@ export default function SignupPage() {
 
     setLoading(false)
     if (error) { setError(error.message); return }
-    setSuccess(true)
+    setStep('verify')
+  }
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: 'signup',
+    })
+
+    setLoading(false)
+    if (error) { setError(error.message); return }
+    router.push('/dashboard')
+    router.refresh()
   }
 
   const handleGoogleSignup = async () => {
@@ -46,28 +64,65 @@ export default function SignupPage() {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-        queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })
   }
 
-  if (success) {
+  // ── VERIFY STEP ────────────────────────────────────────
+  if (step === 'verify') {
     return (
-      <div className="app-container flex flex-col items-center justify-center px-6 text-center">
-        <div className="w-16 h-16 bg-brand-500 rounded-2xl flex items-center justify-center mb-4">
-          <Sparkles className="w-8 h-8 text-white" />
+      <div className="app-container flex flex-col">
+        <div className="bg-brand-500 px-6 pt-12 pb-16 rounded-b-[32px] safe-area-inset-top">
+          <button
+            onClick={() => setStep('form')}
+            className="flex items-center gap-1 text-white/80 text-sm mb-4 !min-h-0"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+          <h1 className="font-serif text-3xl text-white mb-2">Check your email</h1>
+          <p className="text-brand-100 text-sm">
+            We sent a 6-digit code to <strong className="text-white">{email}</strong>
+          </p>
         </div>
-        <h1 className="font-serif text-2xl text-navy-500 mb-2">Check your email</h1>
-        <p className="text-smoke-500 text-sm max-w-xs">
-          We sent a confirmation link to <strong>{email}</strong>. Click it to finish setting up your account.
-        </p>
-        <Link href="/auth/login" className="mt-6 text-brand-500 text-sm font-medium">
-          Back to sign in
-        </Link>
+
+        <div className="px-6 py-8 flex-1 flex flex-col">
+          <form onSubmit={handleVerify} className="flex flex-col gap-4">
+            <div>
+              <label className="text-xs font-medium text-smoke-700 mb-1.5 block">Verification code</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                required
+                maxLength={6}
+                pattern="[0-9]{6}"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                className="w-full h-14 px-4 rounded-xl border-2 border-smoke-100 focus:border-brand-500 outline-none text-center text-2xl tracking-widest font-mono bg-white"
+                placeholder="000000"
+                autoFocus
+              />
+              <p className="text-xs text-smoke-500 mt-2">
+                Didn't get a code? Check your spam folder, or you can also click the link in the email.
+              </p>
+            </div>
+
+            {error && <div className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-3">{error}</div>}
+
+            <button
+              type="submit"
+              disabled={loading || code.length !== 6}
+              className="flex items-center justify-center gap-2 w-full h-12 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 disabled:opacity-50"
+            >
+              {loading ? 'Verifying...' : 'Verify & continue'}
+              {!loading && <ArrowRight className="w-4 h-4" />}
+            </button>
+          </form>
+        </div>
       </div>
     )
   }
 
+  // ── FORM STEP ─────────────────────────────────────────
   return (
     <div className="app-container flex flex-col">
       <div className="bg-brand-500 px-6 pt-12 pb-16 rounded-b-[32px] safe-area-inset-top">
@@ -82,15 +137,12 @@ export default function SignupPage() {
       </div>
 
       <div className="px-6 py-8 flex-1 flex flex-col">
-        {/* Role selector */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <button
             type="button"
             onClick={() => setRole('host')}
             className={`p-4 rounded-xl border-2 text-left transition-all ${
-              role === 'host'
-                ? 'border-brand-500 bg-brand-50'
-                : 'border-smoke-100 bg-white'
+              role === 'host' ? 'border-brand-500 bg-brand-50' : 'border-smoke-100 bg-white'
             }`}
           >
             <User className={`w-5 h-5 mb-2 ${role === 'host' ? 'text-brand-500' : 'text-smoke-500'}`} />
@@ -101,9 +153,7 @@ export default function SignupPage() {
             type="button"
             onClick={() => setRole('manager')}
             className={`p-4 rounded-xl border-2 text-left transition-all ${
-              role === 'manager'
-                ? 'border-brand-500 bg-brand-50'
-                : 'border-smoke-100 bg-white'
+              role === 'manager' ? 'border-brand-500 bg-brand-50' : 'border-smoke-100 bg-white'
             }`}
           >
             <Briefcase className={`w-5 h-5 mb-2 ${role === 'manager' ? 'text-brand-500' : 'text-smoke-500'}`} />
@@ -140,7 +190,7 @@ export default function SignupPage() {
               required
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
+              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none bg-white"
               placeholder="Your full name"
             />
           </div>
@@ -151,7 +201,7 @@ export default function SignupPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
+              className="w-full h-12 px-4 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none bg-white"
               placeholder="you@example.com"
             />
           </div>
@@ -164,7 +214,7 @@ export default function SignupPage() {
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-12 px-4 pr-12 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none"
+                className="w-full h-12 px-4 pr-12 rounded-xl border border-smoke-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none bg-white"
                 placeholder="At least 6 characters"
               />
               <button
@@ -184,7 +234,7 @@ export default function SignupPage() {
             disabled={loading}
             className="flex items-center justify-center gap-2 w-full h-12 bg-brand-500 text-white font-medium rounded-xl hover:bg-brand-600 transition-colors disabled:opacity-50 mt-2"
           >
-            {loading ? 'Creating account...' : 'Create account'}
+            {loading ? 'Creating account...' : 'Continue'}
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
