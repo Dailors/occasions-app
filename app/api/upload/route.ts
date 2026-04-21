@@ -1,128 +1,84 @@
 // app/api/upload/route.ts
-import { createRouteClient } from '@/lib/supabase/server'
-import { createServiceRoleClient } from '@/lib/supabase/server'
+// Receives a file from a guest and stores it in Supabase Storage.
+// Then inserts a media row pointing to the file.
+
+import { createRouteClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { tagMedia } from '@/lib/ai/tagger'
-import { checkRateLimit } from '@/lib/ratelimit'
 
-export const maxDuration = 60   // seconds — override Vercel default
-
-const MAX_FILE_SIZE = 200 * 1024 * 1024 // 200 MB
+export const maxDuration = 60
 
 export async function POST(req: NextRequest) {
-  const supabase    = createRouteClient()
-  const supabaseAdmin = createServiceRoleClient()
+  try {
+    const supabase = createRouteClient()
+    const admin = createServiceRoleClient()
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-  }
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
-  // Rate limit: 100 uploads per user per hour
-  const rl = checkRateLimit(user.id)
-  if (!rl.allowed) {
-    return NextResponse.json(
-      { error: 'Upload limit reached. Please try again later.' },
-      {
-        status: 429,
-        headers: {
-          'X-RateLimit-Limit':     '100',
-          'X-RateLimit-Remaining': '0',
-          'X-RateLimit-Reset':     String(Math.ceil(rl.resetAt / 1000)),
-          'Retry-After':           String(Math.ceil((rl.resetAt - Date.now()) / 1000)),
-        },
-      }
-    )
-  }
+    const form = await req.formData()
+    const file = form.get('file') as File
+    const albumId = form.get('album_id') as string
+    const eventId = form.get('event_id') as string
 
-  const formData = await req.formData()
-  const file     = formData.get('file')     as File | null
-  const event_id = formData.get('event_id') as string | null
-  const album_id = formData.get('album_id') as string | null
+    if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
+    if (!albumId) return NextResponse.json({ error: 'No album_id' }, { status: 400 })
+    if (!eventId) return NextResponse.json({ error: 'No event_id' }, { status: 400 })
 
-  if (!file || !event_id || !album_id) {
-    return NextResponse.json({ error: 'Missing file, event_id, or album_id' }, { status: 400 })
-  }
-  if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: 'File too large (max 200 MB)' }, { status: 413 })
-  }
+    // Verify guest is part of this album
+    const { data: membership } = await admin
+      .from('event_guests')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('event_id', eventId)
+      .eq('album_id', albumId)
+      .maybeSingle()
 
-  const isPhoto = file.type.startsWith('image/')
-  const isVideo = file.type.startsWith('video/')
-  if (!isPhoto && !isVideo) {
-    return NextResponse.json({ error: 'Only images and videos are allowed' }, { status: 415 })
-  }
+    if (!membership) {
+      return NextResponse.json({ error: 'Not a member of this album. Please reload and try again.' }, { status: 403 })
+    }
 
-  // Verify guest access
-  const { data: guestAccess } = await supabase
-    .from('event_guests')
-    .select('id')
-    .eq('event_id', event_id)
-    .eq('album_id', album_id)
-    .eq('user_id', user.id)
-    .single()
+    // Determine media type
+    const type: 'photo' | 'video' = file.type.startsWith('video') ? 'video' : 'photo'
 
-  if (!guestAccess) {
-    return NextResponse.json({ error: 'No access to this album' }, { status: 403 })
-  }
+    // Build file path: event_id/uploader_id/filename
+    const ext = file.name.split('.').pop() || 'bin'
+    const timestamp = Date.now()
+    const path = `${eventId}/${user.id}/${timestamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`
 
-  const ext         = file.name.split('.').pop() ?? (isPhoto ? 'jpg' : 'mp4')
-  const fileName    = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-  const storagePath = `${event_id}/${user.id}/${fileName}`
+    // Upload to media-originals bucket
+    const arrayBuffer = await file.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
 
-  const arrayBuffer = await file.arrayBuffer()
-  const { error: storageError } = await supabase.storage
-    .from('media-originals')
-    .upload(storagePath, arrayBuffer, { contentType: file.type, upsert: false })
-
-  if (storageError) {
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 })
-  }
-
-  const { data: mediaRow, error: insertError } = await supabase
-    .from('media')
-    .insert({
-      event_id,
-      album_id,
-      uploader_id:   user.id,
-      type:          isPhoto ? 'photo' : 'video',
-      url_original:  storagePath,
-      file_size:     file.size,
-    })
-    .select('id, type, url_original, uploaded_at')
-    .single()
-
-  if (insertError) {
-    await supabase.storage.from('media-originals').remove([storagePath])
-    return NextResponse.json({ error: 'Could not save upload record' }, { status: 500 })
-  }
-
-  // Async AI tagging — don't block the response
-  if (isPhoto) {
-    const b64 = Buffer.from(arrayBuffer).toString('base64')
-    tagMedia(b64, file.type as any)
-      .then(async (tags) => {
-        await supabaseAdmin.from('media_tags').insert({
-          media_id:      mediaRow.id,
-          category:      tags.category,
-          emotion:       tags.emotion,
-          quality_score: tags.quality_score,
-          raw_tags:      tags.raw_tags,
-        })
+    const { error: uploadError } = await admin
+      .storage.from('media-originals')
+      .upload(path, buffer, {
+        contentType: file.type,
+        upsert: false,
       })
-      .catch(err => console.error('Tagging failed for', mediaRow.id, err))
+
+    if (uploadError) {
+      console.error('Upload to storage failed:', uploadError)
+      return NextResponse.json({ error: 'Upload failed: ' + uploadError.message }, { status: 500 })
+    }
+
+    // Insert media row
+    const { data: media, error: insertError } = await admin.from('media').insert({
+      event_id: eventId,
+      album_id: albumId,
+      uploader_id: user.id,
+      type,
+      url_original: path,
+      file_size: file.size,
+    }).select().single()
+
+    if (insertError) {
+      console.error('Media row insert failed:', insertError)
+      return NextResponse.json({ error: 'Database insert failed: ' + insertError.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ media })
+  } catch (err: any) {
+    console.error('upload error:', err)
+    return NextResponse.json({ error: err.message ?? 'Unknown error' }, { status: 500 })
   }
-
-  const { data: signedUrl } = await supabase.storage
-    .from('media-originals')
-    .createSignedUrl(storagePath, 60 * 60 * 24 * 7)
-
-  return NextResponse.json({
-    media: {
-      id:          mediaRow.id,
-      type:        mediaRow.type,
-      preview_url: signedUrl?.signedUrl ?? null,
-      uploaded_at: mediaRow.uploaded_at,
-    },
-  }, { status: 201 })
 }
