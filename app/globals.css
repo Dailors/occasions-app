@@ -38,36 +38,40 @@
 html {
   -webkit-tap-highlight-color: transparent;
   -webkit-overflow-scrolling: touch;
-  background-color: #22303f;  /* navy frame for desktop */
+  background-color: #ede8df;
 }
 
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  background-color: #22303f;  /* navy behind the app container */
+  background-color: #ede8df;
   color: #22303f;
   min-height: 100vh;
 }
 
-button, a, [role="button"] {
+button, [role="button"] {
+  min-height: 44px;
   touch-action: manipulation;
 }
 
-button, [role="button"] {
-  min-height: 44px;
-}
-
-/* Mobile-first app container with dominant beige background */
+/* PHONE: full width, no shadow, no cap */
 .app-container {
-  max-width: 480px;
-  margin-left: auto;
-  margin-right: auto;
   width: 100%;
   min-height: 100vh;
-  background-color: #ede8df;  /* beige-100 — the DOMINANT color */
+  background-color: #ede8df;
   position: relative;
-  box-shadow: 0 0 40px rgba(34, 48, 63, 0.3);
   overflow-x: hidden;
+}
+
+/* DESKTOP ONLY: cap at 480px, add shadow frame */
+@media (min-width: 640px) {
+  html, body { background-color: #22303f; }
+  .app-container {
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 0 40px rgba(34, 48, 63, 0.3);
+  }
 }
 
 @layer utilities {
@@ -76,22 +80,11 @@ button, [role="button"] {
   .scroll-hide { -ms-overflow-style: none; scrollbar-width: none; }
   .scroll-hide::-webkit-scrollbar { display: none; }
   .no-select { user-select: none; -webkit-user-select: none; }
-
-  /* Cards use a warmer off-white so beige background is still dominant */
-  .card-warm {
-    background-color: #faf8f5;
-    border: 1px solid rgba(196, 180, 154, 0.3);
-  }
 }
 
-/* Animations */
-@keyframes slideInLeft {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
-}
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+@keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .animate-slide-in-left { animation: slideInLeft 0.25s ease-out; }
+.animate-slide-in-right { animation: slideInRight 0.25s ease-out; }
 .animate-fade-in { animation: fadeIn 0.2s ease-out; }
