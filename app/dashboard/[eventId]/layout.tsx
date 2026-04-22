@@ -8,8 +8,8 @@ import { useI18n } from '@/lib/i18n'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import {
   ArrowLeft, Menu, X, Sparkles,
-  LayoutGrid, Image as ImageIcon, Clapperboard, QrCode, Settings,
-  Wand2, CreditCard, FileText, Shield, LogOut,
+  LayoutGrid, Image as ImageIcon, Wand2, QrCode, Settings,
+  CreditCard, FileText, Shield, LogOut, MessageCircleQuestion,
 } from 'lucide-react'
 
 export default function EventLayout({ children }: { children: React.ReactNode }) {
@@ -25,17 +25,15 @@ export default function EventLayout({ children }: { children: React.ReactNode })
   }
 
   const navItems = [
-    { href: `/dashboard/${eventId}`,          icon: LayoutGrid,    label: t('event.overview')    },
-    { href: `/dashboard/${eventId}/media`,    icon: ImageIcon,     label: t('event.media')       },
-    { href: `/dashboard/${eventId}/videos`,   icon: Clapperboard,  label: t('event.videos')      },
-    { href: `/dashboard/${eventId}/stories`,  icon: Wand2,         label: t('event.ai_stories')  },
-    { href: `/dashboard/${eventId}/qr`,       icon: QrCode,        label: t('event.upload_link') },
-    { href: `/dashboard/${eventId}/settings`, icon: Settings,      label: t('event.settings')    },
+    { href: `/dashboard/${eventId}`,               icon: LayoutGrid,   label: t('event.overview')    },
+    { href: `/dashboard/${eventId}/media`,         icon: ImageIcon,    label: t('event.media')       },
+    { href: `/dashboard/${eventId}/ai`,            icon: Wand2,        label: 'AI Suggestions'       },
+    { href: `/dashboard/${eventId}/qr`,            icon: QrCode,       label: t('event.upload_link') },
+    { href: `/dashboard/${eventId}/settings`,      icon: Settings,     label: t('event.settings')    },
   ]
 
   return (
     <>
-      {/* Slide-out sidebar */}
       {menuOpen && (
         <>
           <div className="fixed inset-0 bg-navy-500/60 z-40 animate-fade-in" onClick={() => setMenuOpen(false)} />
@@ -51,18 +49,13 @@ export default function EventLayout({ children }: { children: React.ReactNode })
             </div>
 
             <div className="px-3 py-3 flex-1 overflow-y-auto">
-              <p className="text-[10px] font-semibold uppercase text-smoke-500 px-3 mb-2">{t('event.overview')}</p>
+              <p className="text-[10px] font-semibold uppercase text-smoke-500 px-3 mb-2">Event</p>
               {navItems.map(item => {
                 const active = pathname === item.href
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 px-3 py-3 rounded-xl ${
-                      active ? 'bg-brand-500 text-white' : 'text-navy-500 hover:bg-beige-100'
-                    }`}
-                    onClick={() => setMenuOpen(false)}
-                  >
+                  <Link key={item.href} href={item.href}
+                    className={`flex items-center gap-3 px-3 py-3 rounded-xl ${active ? 'bg-brand-500 text-white' : 'text-navy-500 hover:bg-beige-100'}`}
+                    onClick={() => setMenuOpen(false)}>
                     <item.icon className={`w-4 h-4 ${active ? 'text-white' : 'text-brand-500'}`} />
                     <span className="text-sm">{item.label}</span>
                   </Link>
@@ -71,16 +64,14 @@ export default function EventLayout({ children }: { children: React.ReactNode })
 
               <div className="h-px bg-beige-200 my-3" />
 
-              <p className="text-[10px] font-semibold uppercase text-smoke-500 px-3 mb-2">
-                {t('app.name')}
-              </p>
+              <p className="text-[10px] font-semibold uppercase text-smoke-500 px-3 mb-2">{t('app.name')}</p>
               <Link href="/dashboard" className="flex items-center gap-3 px-3 py-3 rounded-xl text-navy-500 hover:bg-beige-100" onClick={() => setMenuOpen(false)}>
                 <ArrowLeft className={`w-4 h-4 text-brand-500 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
                 <span className="text-sm">{t('dash.my_events')}</span>
               </Link>
-              <Link href="/dashboard/credits" className="flex items-center gap-3 px-3 py-3 rounded-xl text-navy-500 hover:bg-beige-100" onClick={() => setMenuOpen(false)}>
-                <CreditCard className="w-4 h-4 text-brand-500" />
-                <span className="text-sm">{t('dash.credits')}</span>
+              <Link href="/support" className="flex items-center gap-3 px-3 py-3 rounded-xl text-navy-500 hover:bg-beige-100" onClick={() => setMenuOpen(false)}>
+                <MessageCircleQuestion className="w-4 h-4 text-brand-500" />
+                <span className="text-sm">Help & Support</span>
               </Link>
 
               <LanguageToggle />
@@ -107,17 +98,11 @@ export default function EventLayout({ children }: { children: React.ReactNode })
         </>
       )}
 
-      {/* Top bar with hamburger */}
+      {/* Top bar — ONE hamburger, NO back buttons */}
       <div className="sticky top-0 z-30 bg-navy-500 px-4 h-14 flex items-center justify-between safe-area-inset-top">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setMenuOpen(true)} className="w-10 h-10 flex items-center justify-center text-white !min-h-0">
-            <Menu className="w-6 h-6" />
-          </button>
-          <Link href="/dashboard" className="text-white/70 text-sm flex items-center gap-1 !min-h-0">
-            <ArrowLeft className={`w-4 h-4 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
-            {t('common.back')}
-          </Link>
-        </div>
+        <button onClick={() => setMenuOpen(true)} className="w-10 h-10 flex items-center justify-center text-white !min-h-0">
+          <Menu className="w-6 h-6" />
+        </button>
         <div className="flex items-center gap-1.5">
           <Sparkles className="w-4 h-4 text-beige-400" />
           <span className="font-serif text-lg text-white">{t('app.name')}</span>
