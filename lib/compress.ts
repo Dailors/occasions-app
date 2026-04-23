@@ -1,76 +1,108 @@
 // lib/compress.ts
-// Maximum quality upload — no resizing, no quality loss.
-// Images are converted to JPEG at 100% quality only if needed for format compatibility.
-// HEIC files from iPhones are converted to JPEG. Everything else goes up as-is.
+// Browser-side image compression. Runs on guest's phone before upload.
+// Returns both: compressed preview (1200px) and original file.
 
-export interface CompressResult {
-  blob:           Blob
-  originalSize:   number
-  compressedSize: number
+export interface CompressedResult {
+  original:   File          // the untouched original
+  compressed: Blob | null   // compressed preview, or null if compression failed
 }
 
-export async function compressImage(file: File): Promise<CompressResult> {
-  // Only process HEIC/HEIF files (iPhone photos) — everything else uploads as original
-  const isHEIC = file.type === 'image/heic' || file.type === 'image/heif' ||
-                 file.name.toLowerCase().endsWith('.heic') ||
-                 file.name.toLowerCase().endsWith('.heif')
-
-  if (!isHEIC) {
-    // Return original file unchanged — full quality, full resolution
-    return {
-      blob:           file,
-      originalSize:   file.size,
-      compressedSize: file.size,
-    }
+export async function compressImage(file: File, maxWidth = 1200, quality = 0.82): Promise<CompressedResult> {
+  // Only compress images
+  if (!file.type.startsWith('image/')) {
+    return { original: file, compressed: null }
   }
 
-  // Convert HEIC to JPEG at 100% quality so browsers can display previews
+  try {
+    const img = await loadImage(file)
+
+    // Calculate new dimensions (preserve aspect ratio)
+    const ratio = Math.min(1, maxWidth / img.width)
+    const w = Math.round(img.width * ratio)
+    const h = Math.round(img.height * ratio)
+
+    // Draw to canvas
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return { original: file, compressed: null }
+
+    ctx.drawImage(img, 0, 0, w, h)
+
+    // Convert to JPEG blob
+    const compressed = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality)
+    })
+
+    return { original: file, compressed }
+  } catch (err) {
+    console.error('Compression failed:', err)
+    return { original: file, compressed: null }
+  }
+}
+
+function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
-
     img.onload = () => {
       URL.revokeObjectURL(url)
-
-      const canvas = document.createElement('canvas')
-      canvas.width  = img.naturalWidth
-      canvas.height = img.naturalHeight
-
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return reject(new Error('Canvas not supported'))
-
-      ctx.drawImage(img, 0, 0)
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return reject(new Error('Conversion failed'))
-          resolve({
-            blob,
-            originalSize:   file.size,
-            compressedSize: blob.size,
-          })
-        },
-        'image/jpeg',
-        1.0    // 100% quality — no loss
-      )
+      resolve(img)
     }
-
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      // If HEIC can't be read (browser doesn't support it), upload original
-      resolve({ blob: file, originalSize: file.size, compressedSize: file.size })
+      reject(new Error('Image load failed'))
     }
-
     img.src = url
   })
 }
 
-export function blobToFile(blob: Blob, originalName: string): File {
-  // Keep original extension unless we converted HEIC → JPEG
-  const wasHEIC = originalName.toLowerCase().endsWith('.heic') ||
-                  originalName.toLowerCase().endsWith('.heif')
-  const name = wasHEIC
-    ? originalName.replace(/\.(heic|heif)$/i, '.jpg')
-    : originalName
-  return new File([blob], name, { type: blob.type, lastModified: Date.now() })
+// Extract a keyframe from a video (middle of the video)
+// Returns a compressed JPEG blob ready for vision analysis
+export async function extractVideoFrame(file: File, timeSec?: number): Promise<Blob | null> {
+  if (!file.type.startsWith('video/')) return null
+
+  try {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+
+    const url = URL.createObjectURL(file)
+    video.src = url
+
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve()
+      video.onerror = () => reject(new Error('video load failed'))
+    })
+
+    const t = typeof timeSec === 'number'
+      ? Math.min(timeSec, video.duration - 0.1)
+      : Math.min(video.duration / 2, 10)  // middle or 10s in
+
+    video.currentTime = t
+
+    await new Promise<void>((resolve) => {
+      video.onseeked = () => resolve()
+    })
+
+    const canvas = document.createElement('canvas')
+    const maxW = 1200
+    const ratio = Math.min(1, maxW / video.videoWidth)
+    canvas.width = Math.round(video.videoWidth * ratio)
+    canvas.height = Math.round(video.videoHeight * ratio)
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { URL.revokeObjectURL(url); return null }
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    URL.revokeObjectURL(url)
+
+    return new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.82)
+    })
+  } catch (err) {
+    console.error('Video frame extract failed:', err)
+    return null
+  }
 }

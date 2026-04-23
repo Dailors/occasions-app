@@ -1,6 +1,6 @@
 // app/api/upload/route.ts
-// Receives a file from a guest and stores it in Supabase Storage.
-// Then inserts a media row pointing to the file.
+// Guest uploads file(s). Accepts both original + optional compressed preview.
+// Saves both. Fires background tagging. Fast response to client.
 
 import { createRouteClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
@@ -16,49 +16,50 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
 
     const form = await req.formData()
-    const file = form.get('file') as File
+    const original = form.get('file') as File                  // original file
+    const compressed = form.get('compressed') as File | null   // optional compressed preview
     const albumId = form.get('album_id') as string
     const eventId = form.get('event_id') as string
 
-    if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
+    if (!original) return NextResponse.json({ error: 'No file' }, { status: 400 })
     if (!albumId) return NextResponse.json({ error: 'No album_id' }, { status: 400 })
     if (!eventId) return NextResponse.json({ error: 'No event_id' }, { status: 400 })
 
-    // Verify guest is part of this album
+    // Verify membership
     const { data: membership } = await admin
-      .from('event_guests')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('event_id', eventId)
-      .eq('album_id', albumId)
+      .from('event_guests').select('id')
+      .eq('user_id', user.id).eq('event_id', eventId).eq('album_id', albumId)
       .maybeSingle()
-
     if (!membership) {
-      return NextResponse.json({ error: 'Not a member of this album. Please reload and try again.' }, { status: 403 })
+      return NextResponse.json({ error: 'Not a member of this album. Reload and retry.' }, { status: 403 })
     }
 
-    // Determine media type
-    const type: 'photo' | 'video' = file.type.startsWith('video') ? 'video' : 'photo'
-
-    // Build file path: event_id/uploader_id/filename
-    const ext = file.name.split('.').pop() || 'bin'
+    const type: 'photo' | 'video' = original.type.startsWith('video') ? 'video' : 'photo'
+    const ext = original.name.split('.').pop() || 'bin'
     const timestamp = Date.now()
-    const path = `${eventId}/${user.id}/${timestamp}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const rand = Math.random().toString(36).slice(2, 8)
+    const basePath = `${eventId}/${user.id}/${timestamp}-${rand}`
+    const originalPath = `${basePath}.${ext}`
+    const compressedPath = compressed ? `${basePath}-c.jpg` : null
 
-    // Upload to media-originals bucket
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
-    const { error: uploadError } = await admin
-      .storage.from('media-originals')
-      .upload(path, buffer, {
-        contentType: file.type,
-        upsert: false,
-      })
+    // Upload original
+    const originalBuf = Buffer.from(await original.arrayBuffer())
+    const { error: uploadError } = await admin.storage
+      .from('media-originals')
+      .upload(originalPath, originalBuf, { contentType: original.type, upsert: false })
 
     if (uploadError) {
-      console.error('Upload to storage failed:', uploadError)
+      console.error('Original upload failed:', uploadError)
       return NextResponse.json({ error: 'Upload failed: ' + uploadError.message }, { status: 500 })
+    }
+
+    // Upload compressed preview if provided
+    if (compressed && compressedPath) {
+      const compressedBuf = Buffer.from(await compressed.arrayBuffer())
+      const { error: compErr } = await admin.storage
+        .from('media-compressed')
+        .upload(compressedPath, compressedBuf, { contentType: 'image/jpeg', upsert: false })
+      if (compErr) console.error('Compressed upload failed (non-fatal):', compErr)
     }
 
     // Insert media row
@@ -67,14 +68,23 @@ export async function POST(req: NextRequest) {
       album_id: albumId,
       uploader_id: user.id,
       type,
-      url_original: path,
-      file_size: file.size,
+      url_original: originalPath,
+      url_compressed: compressedPath,
+      file_size: original.size,
     }).select().single()
 
     if (insertError) {
       console.error('Media row insert failed:', insertError)
       return NextResponse.json({ error: 'Database insert failed: ' + insertError.message }, { status: 500 })
     }
+
+    // Fire background tagging (photos + videos)
+    const origin = req.nextUrl.origin
+    fetch(`${origin}/api/tag-media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ media_id: media.id }),
+    }).catch(err => console.error('Background tag failed:', err))
 
     return NextResponse.json({ media })
   } catch (err: any) {

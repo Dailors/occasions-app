@@ -6,15 +6,15 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useI18n } from '@/lib/i18n'
-import { Wand2, Copy, Check, Download, RefreshCw, Clapperboard, ImagePlus, Layers } from 'lucide-react'
+import { Wand2, Copy, Check, RefreshCw, Clapperboard, ImagePlus, Layers, Sparkles } from 'lucide-react'
 
 type Kind = 'story' | 'post' | 'photo_dump' | 'video'
 
 const KINDS: { id: Kind; icon: any; label: string; desc: string; color: string }[] = [
-  { id: 'story',      icon: ImagePlus,    label: 'Story',       desc: 'Instagram story (9:16)',         color: 'bg-pink-500'   },
-  { id: 'post',       icon: Wand2,        label: 'Post',        desc: 'Square post with caption',        color: 'bg-purple-500' },
-  { id: 'photo_dump', icon: Layers,       label: 'Photo Dump',  desc: 'Carousel of 6-8 photos',          color: 'bg-amber-500'  },
-  { id: 'video',      icon: Clapperboard, label: 'Video',       desc: 'Cinematic highlight',             color: 'bg-brand-500'  },
+  { id: 'story',      icon: ImagePlus,    label: 'Story',       desc: 'Instagram story (9:16)',        color: 'bg-pink-500'   },
+  { id: 'post',       icon: Wand2,        label: 'Post',        desc: 'Square post with caption',       color: 'bg-purple-500' },
+  { id: 'photo_dump', icon: Layers,       label: 'Photo Dump',  desc: 'Carousel of 6-8 photos',         color: 'bg-amber-500'  },
+  { id: 'video',      icon: Clapperboard, label: 'Video',       desc: 'Cinematic highlight',            color: 'bg-brand-500'  },
 ]
 
 export default function AIPage() {
@@ -27,6 +27,8 @@ export default function AIPage() {
   const [media, setMedia] = useState<Record<string, any>>({})
   const [generating, setGenerating] = useState<Kind | null>(null)
   const [copied, setCopied] = useState('')
+  const [retagging, setRetagging] = useState(false)
+  const [untaggedCount, setUntaggedCount] = useState(0)
 
   useEffect(() => { load() }, [eventId])
 
@@ -48,13 +50,39 @@ export default function AIPage() {
       }
       setMedia(map)
     }
+
+    // Check how many photos are untagged
+    const { data: allPhotos } = await supabase
+      .from('media').select('id').eq('event_id', eventId).eq('type', 'photo')
+    if (allPhotos && allPhotos.length > 0) {
+      const { data: tagged } = await supabase
+        .from('media_tags').select('media_id').in('media_id', allPhotos.map(p => p.id))
+      const taggedIds = new Set((tagged ?? []).map((t: any) => t.media_id))
+      setUntaggedCount(allPhotos.filter(p => !taggedIds.has(p.id)).length)
+    }
+
     setLoading(false)
+  }
+
+  const retagAll = async () => {
+    setRetagging(true)
+    try {
+      const res = await fetch(`/api/events/${eventId}/retag`, { method: 'POST' })
+      const data = await res.json()
+      alert(lang === 'ar'
+        ? `تم تحليل ${data.tagged} صورة`
+        : `Analyzed ${data.tagged} photos${data.failed > 0 ? ` (${data.failed} failed)` : ''}`
+      )
+      await load()
+    } catch { alert('Retag failed') }
+    setRetagging(false)
   }
 
   const generate = async (kind: Kind) => {
     setGenerating(kind)
     const res = await fetch(`/api/events/${eventId}/stories`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind, count: 2 }),
     })
     const data = await res.json()
@@ -63,8 +91,8 @@ export default function AIPage() {
     setGenerating(null)
   }
 
-  const regenerationCount = (kind: Kind) => packages.filter(p => p.format === kind).length
-  const canGenerate = (kind: Kind) => regenerationCount(kind) < 6  // 2 initial + 3 regens * 2 items
+  const regenerationCount = (k: Kind) => packages.filter(p => p.format === k).length
+  const canGenerate = (k: Kind) => regenerationCount(k) < 6
 
   const copyText = (id: string, text: string) => {
     navigator.clipboard.writeText(text)
@@ -82,11 +110,29 @@ export default function AIPage() {
           <h1 className="font-serif text-2xl text-white">AI Suggestions</h1>
         </div>
         <p className="text-sm text-brand-100">
-          {lang === 'ar' ? 'دع الذكاء الاصطناعي يختار أفضل اللحظات ويصنع محتوى جاهز للنشر' : 'Let AI curate your best moments into ready-to-post content.'}
+          {lang === 'ar' ? 'دع الذكاء الاصطناعي يختار أفضل اللحظات' : 'AI picks your best moments and writes captions.'}
         </p>
       </div>
 
       <div className="px-5 py-5 flex flex-col gap-5">
+        {untaggedCount > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
+            <Sparkles className="w-5 h-5 text-amber-600 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-900">
+                {lang === 'ar' ? `${untaggedCount} صورة لم تحلّل بعد` : `${untaggedCount} photos not analyzed yet`}
+              </p>
+              <p className="text-xs text-amber-700">
+                {lang === 'ar' ? 'حلّلها لجعل الذكاء الاصطناعي أكثر ذكاءً' : 'Analyze them to get smarter AI picks'}
+              </p>
+            </div>
+            <button onClick={retagAll} disabled={retagging}
+              className="h-10 px-3 bg-amber-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 whitespace-nowrap">
+              {retagging ? (lang === 'ar' ? '...' : 'Analyzing...') : (lang === 'ar' ? 'حلّل' : 'Analyze')}
+            </button>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
         ) : (
@@ -102,9 +148,7 @@ export default function AIPage() {
                     <p className="text-xs text-smoke-500">{kind.desc}</p>
                   </div>
                 </div>
-                <div className="text-xs text-smoke-500">
-                  {kind.items.length}/6
-                </div>
+                <div className="text-xs text-smoke-500">{kind.items.length}/6</div>
               </div>
 
               {kind.items.length > 0 && (
@@ -124,7 +168,7 @@ export default function AIPage() {
                   ) : kind.items.length === 0 ? (
                     <><Wand2 className="w-4 h-4" /> Generate 2 {kind.label.toLowerCase()}s</>
                   ) : canGenerate(kind.id) ? (
-                    <><RefreshCw className="w-4 h-4" /> Regenerate 2 more</>
+                    <><RefreshCw className="w-4 h-4" /> Generate 2 more</>
                   ) : (
                     <>Max reached ({regenerationCount(kind.id)}/6)</>
                   )}
@@ -157,7 +201,8 @@ function PackageCard({ pkg, media, onCopy, copied }: any) {
       {pkg.caption_en && (
         <div className="text-xs text-navy-500 mb-1">
           {pkg.caption_en}
-          <button onClick={() => onCopy(pkg.id, pkg.caption_en + ' ' + (pkg.hashtags ?? []).map((h: string) => '#' + h).join(' '))} className="ml-2 text-brand-500 !min-h-0 p-0 align-middle">
+          <button onClick={() => onCopy(pkg.id, pkg.caption_en + ' ' + (pkg.hashtags ?? []).map((h: string) => '#' + h).join(' '))}
+            className="ml-2 text-brand-500 !min-h-0 p-0 align-middle">
             {copied === pkg.id ? <Check className="w-3 h-3 inline" /> : <Copy className="w-3 h-3 inline" />}
           </button>
         </div>
