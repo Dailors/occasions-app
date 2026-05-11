@@ -8,7 +8,7 @@ import { useI18n } from '@/lib/i18n'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import {
   ArrowLeft, Menu, X, Sparkles, Lock,
-  LayoutGrid, Image as ImageIcon, Wand2, QrCode, Settings,
+  LayoutGrid, Image as ImageIcon, Wand2, QrCode, Settings, Clapperboard,
   CreditCard, FileText, Shield, LogOut, MessageCircleQuestion, Send,
 } from 'lucide-react'
 
@@ -23,7 +23,6 @@ export default function EventLayout({ children }: { children: React.ReactNode })
   const [showHandoffOnly, setShowHandoffOnly] = useState(false)
   const supabase = createClient()
 
-  // Access control check
   useEffect(() => {
     const check = async () => {
       const { data: { user } } = await supabase.auth.getUser()
@@ -33,33 +32,19 @@ export default function EventLayout({ children }: { children: React.ReactNode })
       const { data: event } = await supabase.from('events')
         .select('admin_id, created_by_manager, claimed_at').eq('id', eventId).single()
 
-      if (!event) {
-        setBlocked(true)
-        setChecking(false)
-        return
-      }
+      if (!event) { setBlocked(true); setChecking(false); return }
 
-      // If manager viewing an event they manage
       if (profile?.role === 'manager' && event.created_by_manager === user.id) {
-        // BEFORE claim → can only access /handoff page
-        // AFTER claim → blocked entirely
         if (event.claimed_at) {
           setBlocked(true)
         } else {
-          // Only allow handoff page for unclaimed manager events
           const isHandoff = pathname.endsWith('/handoff')
-          if (!isHandoff) {
-            router.push(`/dashboard/${eventId}/handoff`)
-            return
-          }
+          if (!isHandoff) { router.push(`/dashboard/${eventId}/handoff`); return }
           setShowHandoffOnly(true)
         }
-      }
-      // Host (admin_id matches) → full access, no blocking
-      else if (event.admin_id !== user.id) {
+      } else if (event.admin_id !== user.id) {
         setBlocked(true)
       }
-
       setChecking(false)
     }
     check()
@@ -70,30 +55,22 @@ export default function EventLayout({ children }: { children: React.ReactNode })
     window.location.href = '/auth/login'
   }
 
-  if (checking) {
-    return <div className="app-container flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
-  }
+  if (checking) return <div className="app-container flex items-center justify-center min-h-screen"><div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
 
   if (blocked) {
     return (
       <div className="app-container min-h-screen flex flex-col" dir={dir}>
-        <div className="sticky top-0 z-30 bg-navy-500 px-4 h-14 flex items-center justify-between safe-area-inset-top">
+        <div className="sticky top-0 z-30 bg-navy-500 px-4 h-14 flex items-center safe-area-inset-top">
           <Link href="/dashboard" className="flex items-center gap-2 text-white !min-h-0">
             <ArrowLeft className={`w-5 h-5 ${dir === 'rtl' ? 'rotate-180' : ''}`} />
             <span className="text-sm font-medium">{t('common.back')}</span>
           </Link>
         </div>
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-smoke-100 flex items-center justify-center">
-            <Lock className="w-8 h-8 text-smoke-500" />
-          </div>
-          <h2 className="font-serif text-2xl text-navy-500">
-            {lang === 'ar' ? 'لا يمكنك الدخول' : "You can't enter this event"}
-          </h2>
+          <div className="w-16 h-16 rounded-2xl bg-smoke-100 flex items-center justify-center"><Lock className="w-8 h-8 text-smoke-500" /></div>
+          <h2 className="font-serif text-2xl text-navy-500">{lang === 'ar' ? 'لا يمكنك الدخول' : "You can't enter this event"}</h2>
           <p className="text-sm text-smoke-700 max-w-xs">
-            {lang === 'ar'
-              ? 'لقد تم تسليم هذه المناسبة للعميل. لم يعد بإمكانك رؤية الصور أو التعديل.'
-              : 'This event has been handed off to the client. You no longer have access to its content.'}
+            {lang === 'ar' ? 'لقد تم تسليم هذه المناسبة للعميل. لم يعد بإمكانك رؤية الصور.' : 'This event has been handed off to the client.'}
           </p>
           <Link href="/dashboard" className="mt-4 h-11 px-6 bg-brand-500 text-white rounded-xl font-medium flex items-center">
             {lang === 'ar' ? 'العودة للمناسبات' : 'Back to events'}
@@ -109,6 +86,7 @@ export default function EventLayout({ children }: { children: React.ReactNode })
     { href: `/dashboard/${eventId}`,          icon: LayoutGrid,  label: t('event.overview')    },
     { href: `/dashboard/${eventId}/media`,    icon: ImageIcon,   label: t('event.media')       },
     { href: `/dashboard/${eventId}/ai`,       icon: Wand2,       label: 'AI Suggestions'       },
+    { href: `/dashboard/${eventId}/videos`,   icon: Clapperboard, label: lang === 'ar' ? 'فيديوهات' : 'Videos' },
     { href: `/dashboard/${eventId}/qr`,       icon: QrCode,      label: t('event.upload_link') },
     { href: `/dashboard/${eventId}/settings`, icon: Settings,    label: t('event.settings')    },
   ]
@@ -143,8 +121,7 @@ export default function EventLayout({ children }: { children: React.ReactNode })
                 <span className="text-sm">{t('dash.my_events')}</span>
               </Link>
               <Link href="/support" className="flex items-center gap-3 px-3 py-3 rounded-xl text-navy-500" onClick={() => setMenuOpen(false)}>
-                <MessageCircleQuestion className="w-4 h-4 text-brand-500" />
-                <span className="text-sm">Help & Support</span>
+                <MessageCircleQuestion className="w-4 h-4 text-brand-500" /><span className="text-sm">Help & Support</span>
               </Link>
               <LanguageToggle />
               <div className="h-px bg-beige-200 my-3" />
