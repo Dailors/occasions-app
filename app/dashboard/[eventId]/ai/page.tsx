@@ -2,19 +2,47 @@
 
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useI18n } from '@/lib/i18n'
-import { Wand2, Copy, Check, RefreshCw, Clapperboard, ImagePlus, Layers, Sparkles } from 'lucide-react'
+import {
+  renderStory, renderPost, renderPhotoDump, downloadBlob,
+  pickPreset, pickIllustration,
+  type EnhancementPreset,
+} from '@/lib/canvas-renderer'
+import {
+  Wand2, Loader2, Download, RefreshCw, Sparkles,
+  Image as ImageIcon, BookOpen, Grid3X3, Film, ImagePlus,
+} from 'lucide-react'
 
 type Kind = 'story' | 'post' | 'photo_dump' | 'video'
 
-const KINDS: { id: Kind; icon: any; label: string; desc: string; color: string }[] = [
-  { id: 'story',      icon: ImagePlus,    label: 'Story',       desc: 'Instagram story (9:16)',        color: 'bg-pink-500'   },
-  { id: 'post',       icon: Wand2,        label: 'Post',        desc: 'Square post with caption',       color: 'bg-purple-500' },
-  { id: 'photo_dump', icon: Layers,       label: 'Photo Dump',  desc: 'Carousel of 6-8 photos',         color: 'bg-amber-500'  },
-  { id: 'video',      icon: Clapperboard, label: 'Video',       desc: 'Cinematic highlight',            color: 'bg-brand-500'  },
+interface Package {
+  id: string
+  format: Kind
+  variant: number
+  media_ids: string[]
+  caption_en: string
+  caption_ar: string
+  hashtags: string[]
+  status: string
+  photos?: MediaItem[]
+}
+
+interface MediaItem {
+  id: string
+  url_compressed: string | null
+  url_original: string
+  category: string | null
+  emotion: string | null
+  quality_score: number | null
+}
+
+const TABS: { id: Kind; label_en: string; label_ar: string; icon: any }[] = [
+  { id: 'story',      label_en: 'Stories',     label_ar: 'ستوريز',  icon: BookOpen },
+  { id: 'post',       label_en: 'Posts',        label_ar: 'منشورات', icon: ImageIcon },
+  { id: 'photo_dump', label_en: 'Photo Dumps',  label_ar: 'ألبوم',   icon: Grid3X3 },
 ]
 
 export default function AIPage() {
@@ -22,192 +50,287 @@ export default function AIPage() {
   const { t, lang, dir } = useI18n()
   const supabase = createClient()
 
-  const [loading, setLoading] = useState(true)
-  const [packages, setPackages] = useState<any[]>([])
-  const [media, setMedia] = useState<Record<string, any>>({})
+  const [packages, setPackages] = useState<Package[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [tab, setTab]           = useState<Kind>('story')
   const [generating, setGenerating] = useState<Kind | null>(null)
-  const [copied, setCopied] = useState('')
-  const [retagging, setRetagging] = useState(false)
-  const [untaggedCount, setUntaggedCount] = useState(0)
+  const [rendering, setRendering]   = useState<string | null>(null)
+  const [error, setError]           = useState('')
+  const [photoCount, setPhotoCount] = useState(0)
+  const [untagged, setUntagged]     = useState(0)
 
   useEffect(() => { load() }, [eventId])
 
   const load = async () => {
-    setLoading(true)
-    const res = await fetch(`/api/events/${eventId}/stories`)
-    const data = await res.json()
-    setPackages(data.packages ?? [])
+    const { count: total } = await supabase.from('media')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_id', eventId).eq('type', 'photo')
+    setPhotoCount(total ?? 0)
 
-    const allIds = (data.packages ?? []).flatMap((p: any) => p.media_ids ?? [])
-    if (allIds.length > 0) {
-      const { data: list } = await supabase.from('media').select('id, url_original, url_compressed').in('id', allIds)
-      const map: Record<string, any> = {}
-      for (const m of list ?? []) {
-        const bucket = m.url_compressed ? 'media-compressed' : 'media-originals'
-        const path = m.url_compressed ?? m.url_original
-        const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60)
-        map[m.id] = { ...m, preview_url: signed?.signedUrl }
-      }
-      setMedia(map)
-    }
+    const { count: tagged } = await supabase.from('media_tags')
+      .select('id', { count: 'exact', head: true })
+      .in('media_id',
+        (await supabase.from('media').select('id').eq('event_id', eventId).eq('type', 'photo')).data?.map((m: any) => m.id) ?? []
+      )
+    setUntagged((total ?? 0) - (tagged ?? 0))
 
-    // Check how many photos are untagged
-    const { data: allPhotos } = await supabase
-      .from('media').select('id').eq('event_id', eventId).eq('type', 'photo')
-    if (allPhotos && allPhotos.length > 0) {
-      const { data: tagged } = await supabase
-        .from('media_tags').select('media_id').in('media_id', allPhotos.map(p => p.id))
-      const taggedIds = new Set((tagged ?? []).map((t: any) => t.media_id))
-      setUntaggedCount(allPhotos.filter(p => !taggedIds.has(p.id)).length)
-    }
+    const { data: pkgs } = await supabase.from('story_packages')
+      .select('*').eq('event_id', eventId)
+      .order('created_at', { ascending: false })
 
+    // Hydrate each package with its photo objects
+    const hydrated = await Promise.all((pkgs ?? []).map(async (pkg: any) => {
+      if (!pkg.media_ids?.length) return { ...pkg, photos: [] }
+      const { data: media } = await supabase.from('media_with_tags')
+        .select('id, url_compressed, url_original, category, emotion, quality_score')
+        .in('id', pkg.media_ids.slice(0, 9))
+      return { ...pkg, photos: media ?? [] }
+    }))
+
+    setPackages(hydrated)
     setLoading(false)
   }
 
-  const retagAll = async () => {
-    setRetagging(true)
-    try {
-      const res = await fetch(`/api/events/${eventId}/retag`, { method: 'POST' })
-      const data = await res.json()
-      alert(lang === 'ar'
-        ? `تم تحليل ${data.tagged} صورة`
-        : `Analyzed ${data.tagged} photos${data.failed > 0 ? ` (${data.failed} failed)` : ''}`
-      )
-      await load()
-    } catch { alert('Retag failed') }
-    setRetagging(false)
-  }
-
   const generate = async (kind: Kind) => {
+    const existing = packages.filter(p => p.format === kind)
+    if (existing.length >= 6) {
+      setError(`Max 6 ${kind}s reached. Delete some to generate more.`)
+      return
+    }
+    setError('')
     setGenerating(kind)
-    const res = await fetch(`/api/events/${eventId}/stories`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, count: 2 }),
-    })
-    const data = await res.json()
-    if (data.error) alert(data.error)
-    await load()
+    try {
+      const res = await fetch(`/api/events/${eventId}/stories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); setGenerating(null); return }
+      await load()
+    } catch (err: any) {
+      setError(err.message ?? 'Failed')
+    }
     setGenerating(null)
   }
 
-  const regenerationCount = (k: Kind) => packages.filter(p => p.format === k).length
-  const canGenerate = (k: Kind) => regenerationCount(k) < 6
-
-  const copyText = (id: string, text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopied(id)
-    setTimeout(() => setCopied(''), 2000)
+  const retag = async () => {
+    await fetch(`/api/events/${eventId}/retag`, { method: 'POST' })
+    setTimeout(load, 3000)
   }
 
-  const byKind = KINDS.map(k => ({ ...k, items: packages.filter(p => p.format === k.id) }))
+  const handleDownloadStory = async (pkg: Package) => {
+    if (!pkg.photos?.length) return
+    setRendering(pkg.id)
+    setError('')
+    try {
+      const photo = pkg.photos[0]
+      const url = getPublicUrl(photo)
+      const preset = pickPreset(photo.category ?? undefined, photo.emotion ?? undefined)
+      const blob = await renderStory(url, pkg.caption_en, pkg.caption_ar, lang as 'en' | 'ar', preset)
+      downloadBlob(blob, `munasaba-story-${pkg.variant}.png`)
+    } catch (err: any) {
+      setError('Render failed: ' + err.message)
+    }
+    setRendering(null)
+  }
+
+  const handleDownloadPost = async (pkg: Package, index: number) => {
+    if (!pkg.photos?.length) return
+    setRendering(pkg.id)
+    setError('')
+    try {
+      const photo = pkg.photos[0]
+      const url = getPublicUrl(photo)
+      const preset = pickPreset(photo.category ?? undefined, photo.emotion ?? undefined)
+      const illStyle = pickIllustration(index, photo.category ?? undefined, photo.emotion ?? undefined)
+      const blob = await renderPost(url, illStyle, preset)
+      downloadBlob(blob, `munasaba-post-${pkg.variant}.png`)
+    } catch (err: any) {
+      setError('Render failed: ' + err.message)
+    }
+    setRendering(null)
+  }
+
+  const handleDownloadDump = async (pkg: Package) => {
+    if (!pkg.photos?.length) return
+    setRendering(pkg.id)
+    setError('')
+    try {
+      const urls = pkg.photos.map(getPublicUrl)
+      const firstPhoto = pkg.photos[0]
+      const preset = pickPreset(firstPhoto.category ?? undefined, firstPhoto.emotion ?? undefined)
+      const blob = await renderPhotoDump(urls, pkg.caption_en, pkg.caption_ar, lang as 'en' | 'ar', preset)
+      downloadBlob(blob, `munasaba-dump-${pkg.variant}.png`)
+    } catch (err: any) {
+      setError('Render failed: ' + err.message)
+    }
+    setRendering(null)
+  }
+
+  const visiblePkgs = packages.filter(p => p.format === tab)
 
   return (
     <div dir={dir}>
       <div className="bg-brand-500 px-5 pt-6 pb-10">
         <div className="flex items-center gap-2 mb-2">
           <Wand2 className="w-5 h-5 text-beige-400" />
-          <h1 className="font-serif text-2xl text-white">AI Suggestions</h1>
+          <h1 className="font-serif text-2xl text-white">
+            {lang === 'ar' ? 'مقترحات AI' : 'AI Suggestions'}
+          </h1>
         </div>
         <p className="text-sm text-brand-100">
-          {lang === 'ar' ? 'دع الذكاء الاصطناعي يختار أفضل اللحظات' : 'AI picks your best moments and writes captions.'}
+          {lang === 'ar' ? `${photoCount} صورة · AI يختار الأفضل ويصمم تلقائياً` : `${photoCount} photos · AI picks the best & designs automatically`}
         </p>
       </div>
 
-      <div className="px-5 py-5 flex flex-col gap-5">
-        {untaggedCount > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3">
-            <Sparkles className="w-5 h-5 text-amber-600 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
+      <div className="px-5 py-5 flex flex-col gap-4">
+        {untagged > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 flex items-center justify-between gap-3">
+            <div>
               <p className="text-sm font-semibold text-amber-900">
-                {lang === 'ar' ? `${untaggedCount} صورة لم تحلّل بعد` : `${untaggedCount} photos not analyzed yet`}
+                {lang === 'ar' ? `${untagged} صورة لم تُحلَّل` : `${untagged} photos not analyzed`}
               </p>
-              <p className="text-xs text-amber-700">
-                {lang === 'ar' ? 'حلّلها لجعل الذكاء الاصطناعي أكثر ذكاءً' : 'Analyze them to get smarter AI picks'}
+              <p className="text-xs text-amber-700 mt-0.5">
+                {lang === 'ar' ? 'حلّل الصور للحصول على نتائج أفضل' : 'Analyze for better results'}
               </p>
             </div>
-            <button onClick={retagAll} disabled={retagging}
-              className="h-10 px-3 bg-amber-600 text-white text-xs font-medium rounded-lg disabled:opacity-50 whitespace-nowrap">
-              {retagging ? (lang === 'ar' ? '...' : 'Analyzing...') : (lang === 'ar' ? 'حلّل' : 'Analyze')}
+            <button onClick={retag}
+              className="h-8 px-3 bg-amber-500 text-white text-xs font-medium rounded-lg flex items-center gap-1 !min-h-0">
+              <Sparkles className="w-3 h-3" />
+              {lang === 'ar' ? 'تحليل' : 'Analyze'}
             </button>
           </div>
         )}
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex bg-beige-100 rounded-xl p-1 gap-0.5">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex-1 h-9 rounded-lg text-xs font-medium transition !min-h-0 flex items-center justify-center gap-1 ${tab === t.id ? 'bg-white text-navy-500 shadow-sm' : 'text-smoke-700'}`}>
+              <t.icon className="w-3.5 h-3.5" />
+              {lang === 'ar' ? t.label_ar : t.label_en}
+            </button>
+          ))}
+        </div>
+
+        {/* Generate button */}
+        {photoCount >= 1 && (
+          <button onClick={() => generate(tab)} disabled={!!generating}
+            className="h-12 w-full bg-navy-500 text-white font-medium rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50">
+            {generating === tab
+              ? <><Loader2 className="w-4 h-4 animate-spin" />{lang === 'ar' ? 'جاري التوليد...' : 'Generating...'}</>
+              : <><Wand2 className="w-4 h-4" />{lang === 'ar' ? `توليد ${TABS.find(t => t.id === tab)?.label_ar}` : `Generate ${tab}`}</>}
+          </button>
+        )}
+
         {loading ? (
-          <div className="flex justify-center py-12"><div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
-        ) : (
-          byKind.map(kind => (
-            <div key={kind.id} className="bg-beige-50 border border-beige-200 rounded-2xl overflow-hidden">
-              <div className="p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${kind.color}`}>
-                    <kind.icon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-navy-500">{kind.label}</h3>
-                    <p className="text-xs text-smoke-500">{kind.desc}</p>
-                  </div>
-                </div>
-                <div className="text-xs text-smoke-500">{kind.items.length}/6</div>
-              </div>
-
-              {kind.items.length > 0 && (
-                <div className="px-4 pb-4 flex flex-col gap-3">
-                  {kind.items.slice(0, 6).map(pkg => (
-                    <PackageCard key={pkg.id} pkg={pkg} media={media} onCopy={copyText} copied={copied} />
-                  ))}
-                </div>
-              )}
-
-              <div className="px-4 pb-4">
-                <button onClick={() => generate(kind.id)}
-                  disabled={generating === kind.id || !canGenerate(kind.id)}
-                  className="w-full h-11 bg-brand-500 text-white text-sm font-medium rounded-xl flex items-center justify-center gap-2 disabled:opacity-50">
-                  {generating === kind.id ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Generating...</>
-                  ) : kind.items.length === 0 ? (
-                    <><Wand2 className="w-4 h-4" /> Generate 2 {kind.label.toLowerCase()}s</>
-                  ) : canGenerate(kind.id) ? (
-                    <><RefreshCw className="w-4 h-4" /> Generate 2 more</>
-                  ) : (
-                    <>Max reached ({regenerationCount(kind.id)}/6)</>
-                  )}
-                </button>
-              </div>
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
+          </div>
+        ) : visiblePkgs.length === 0 ? (
+          <div className="bg-beige-50 border border-beige-200 rounded-2xl p-10 text-center flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-beige-200 flex items-center justify-center">
+              <ImagePlus className="w-5 h-5 text-beige-600" />
             </div>
-          ))
+            <p className="font-medium text-navy-500">
+              {lang === 'ar' ? `لا يوجد ${TABS.find(t => t.id === tab)?.label_ar} بعد` : `No ${tab}s yet`}
+            </p>
+            <p className="text-xs text-smoke-500">
+              {lang === 'ar' ? 'اضغط توليد فوق' : 'Tap Generate above'}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {visiblePkgs.map((pkg, i) => (
+              <PackageCard
+                key={pkg.id}
+                pkg={pkg}
+                index={i}
+                lang={lang}
+                dir={dir}
+                rendering={rendering === pkg.id}
+                onDownload={() => {
+                  if (tab === 'story')      handleDownloadStory(pkg)
+                  else if (tab === 'post')  handleDownloadPost(pkg, i)
+                  else                      handleDownloadDump(pkg)
+                }}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>
   )
 }
 
-function PackageCard({ pkg, media, onCopy, copied }: any) {
+// ── Package card ──
+function PackageCard({ pkg, index, lang, dir, rendering, onDownload }: {
+  pkg: Package; index: number; lang: string; dir: string;
+  rendering: boolean; onDownload: () => void;
+}) {
+  const caption = lang === 'ar' ? pkg.caption_ar : pkg.caption_en
+
   return (
-    <div className="bg-white rounded-xl p-3 border border-beige-200">
-      <div className={`grid gap-1 mb-2 ${
-        pkg.media_ids?.length === 1 ? 'grid-cols-1' :
-        pkg.media_ids?.length <= 4 ? 'grid-cols-2' : 'grid-cols-3'
-      }`}>
-        {(pkg.media_ids ?? []).slice(0, 6).map((mid: string) => {
-          const m = media[mid]
-          return (
-            <div key={mid} className="aspect-square rounded bg-beige-200 overflow-hidden">
-              {m?.preview_url && <img src={m.preview_url} alt="" className="w-full h-full object-cover" />}
+    <div className="bg-beige-50 border border-beige-200 rounded-2xl overflow-hidden" dir={dir}>
+      {/* Photo preview strip */}
+      {pkg.photos && pkg.photos.length > 0 && (
+        <div className="flex gap-1 p-2 bg-beige-100">
+          {pkg.photos.slice(0, 4).map((photo, i) => (
+            <div key={photo.id} className="flex-1 aspect-square rounded-lg overflow-hidden bg-beige-200">
+              <img
+                src={getPublicUrl(photo)}
+                alt=""
+                className="w-full h-full object-cover"
+                crossOrigin="anonymous"
+              />
             </div>
-          )
-        })}
-      </div>
-      {pkg.caption_en && (
-        <div className="text-xs text-navy-500 mb-1">
-          {pkg.caption_en}
-          <button onClick={() => onCopy(pkg.id, pkg.caption_en + ' ' + (pkg.hashtags ?? []).map((h: string) => '#' + h).join(' '))}
-            className="ml-2 text-brand-500 !min-h-0 p-0 align-middle">
-            {copied === pkg.id ? <Check className="w-3 h-3 inline" /> : <Copy className="w-3 h-3 inline" />}
-          </button>
+          ))}
+          {pkg.photos.length < 4 && Array.from({ length: 4 - pkg.photos.length }).map((_, i) => (
+            <div key={i} className="flex-1 aspect-square rounded-lg bg-beige-200" />
+          ))}
         </div>
       )}
-      {pkg.caption_ar && <p className="text-xs text-navy-500" dir="rtl">{pkg.caption_ar}</p>}
+
+      <div className="p-4">
+        {/* Caption */}
+        <p className={`text-sm text-navy-500 leading-relaxed mb-3 ${lang === 'ar' ? 'text-right font-arabic' : ''}`}
+          style={{ fontFamily: lang === 'ar' ? "'Amiri', serif" : undefined }}>
+          {caption}
+        </p>
+
+        {/* Hashtags */}
+        {pkg.hashtags?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {pkg.hashtags.map((tag, i) => (
+              <span key={i} className="text-[11px] text-brand-500 bg-brand-50 px-2 py-0.5 rounded-full">
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Download button */}
+        <button onClick={onDownload} disabled={rendering}
+          className="w-full h-10 bg-brand-500 text-white text-sm font-medium rounded-xl flex items-center justify-center gap-2 disabled:opacity-60">
+          {rendering
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />{lang === 'ar' ? 'جاري التحضير...' : 'Preparing...'}</>
+            : <><Download className="w-3.5 h-3.5" />{lang === 'ar' ? 'تحميل PNG' : 'Download PNG'}</>}
+        </button>
+      </div>
     </div>
   )
+}
+
+// Get usable URL for a photo (prefer compressed)
+function getPublicUrl(photo: MediaItem): string {
+  const supabase = createClient()
+  const path = photo.url_compressed ?? photo.url_original
+  const bucket = photo.url_compressed ? 'media-compressed' : 'media-originals'
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+  return data.publicUrl
 }
